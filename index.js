@@ -24,7 +24,7 @@ const client = new Client({
   ]
 });
 
-const ALLOWED_RELEASE_CHANNEL = '1499936712787493057';
+const ALLOWED_RELEASE_CHANNEL = '1469704790345912406';
 const RELEASE_CHANNEL = '1499936712787493057';
 
 function isAllowedChannel(interaction) {
