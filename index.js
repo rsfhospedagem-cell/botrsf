@@ -24,6 +24,12 @@ const client = new Client({
   ]
 });
 
+const ALLOWED_RELEASE_CHANNEL = '1499936712787493057';
+
+function isAllowedChannel(interaction) {
+  return interaction?.channelId === ALLOWED_RELEASE_CHANNEL;
+}
+
 const CONFIG = {
   CHANNELS: {
     CONTRACT_ANNOUNCEMENT: '1469704790576468149',
@@ -334,9 +340,16 @@ client.on(Events.InteractionCreate, async interaction => {
   // /RELEASE — o próprio jogador sai do time
   // ══════════════════════════════════════════════════
 
-  if (interaction.isChatInputCommand() && interaction.commandName === 'release') {
+ if (interaction.isChatInputCommand() && interaction.commandName === 'release') {
 
-    const { member, user, guild } = interaction;
+  if (!isAllowedChannel(interaction)) {
+    return interaction.reply({
+      content: '❌ Este comando só pode ser usado no canal autorizado.',
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  const { member, user, guild } = interaction;
 
     // Verifica se o jogador tem algum cargo de time
     const hasTeamRole = CONFIG.ROLES.TEAM_ROLES.some(id => member.roles.cache.has(id));
@@ -374,9 +387,16 @@ client.on(Events.InteractionCreate, async interaction => {
   // /FORCE_RELEASE — staff libera qualquer jogador
   // ══════════════════════════════════════════════════
 
-  if (interaction.isChatInputCommand() && interaction.commandName === 'force_release') {
+ if (interaction.isChatInputCommand() && interaction.commandName === 'force_release') {
 
-    const { member, options, guild } = interaction;
+  if (!isAllowedChannel(interaction)) {
+    return interaction.reply({
+      content: '❌ Este comando só pode ser usado no canal autorizado.',
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  const { member, options, guild } = interaction;
 
     // Apenas STAFF pode usar
     if (!CONFIG.ROLES.STAFF_ROLES.some(id => member.roles.cache.has(id))) {
