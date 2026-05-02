@@ -381,7 +381,7 @@ client.on(Events.InteractionCreate, async interaction => {
     // Apenas STAFF pode usar
     if (!CONFIG.ROLES.STAFF_ROLES.some(id => member.roles.cache.has(id))) {
       return interaction.reply({
-        content: '❌ Apenas Staff pode usar este comando.',
+        content: '❌ Apenas Manager pode usar este comando.',
         flags: MessageFlags.Ephemeral
       });
     }
