@@ -140,7 +140,6 @@ function setupExpirationTimer(id, c, time) {
   expirationTimers.set(id, timer);
 }
 
-// ─── HELPER: remove cargo de time e adiciona FA ───────────────────────────────
 async function releasePlayer(member) {
   const teamRolesFound = CONFIG.ROLES.TEAM_ROLES.filter(id =>
     member.roles.cache.has(id)
@@ -152,7 +151,6 @@ async function releasePlayer(member) {
 
   await member.roles.add(CONFIG.ROLES.FA_ROLE).catch(() => {});
 
-  // Cancela contrato ativo se existir
   for (const [id, c] of activeContracts) {
     if (c.signee.id === member.id) {
       clearTimeout(expirationTimers.get(id));
@@ -204,12 +202,10 @@ const commands = [
       opt.setName('ping_scrim').setDescription('Pingar cargo?').setRequired(true)
     ),
 
-  // ── /release ──────────────────────────────────────────────────────────────
   new SlashCommandBuilder()
     .setName('release')
     .setDescription('Sair do seu time e virar Free Agent'),
 
-  // ── /force_release ────────────────────────────────────────────────────────
   new SlashCommandBuilder()
     .setName('force_release')
     .setDescription('[MANAGER] Liberar um jogador do time à força')
@@ -217,6 +213,13 @@ const commands = [
       opt.setName('jogador')
         .setDescription('Jogador a ser liberado')
         .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('roster')
+    .setDescription('Ver quantidade de jogadores contratados no time')
+    .addRoleOption(opt =>
+      opt.setName('time').setDescription('Cargo do time').setRequired(true)
     ),
 ];
 
@@ -338,21 +341,20 @@ client.on(Events.InteractionCreate, async interaction => {
   }
 
   // ══════════════════════════════════════════════════
-  // /RELEASE — o próprio jogador sai do time
+  // /RELEASE
   // ══════════════════════════════════════════════════
 
- if (interaction.isChatInputCommand() && interaction.commandName === 'release') {
+  if (interaction.isChatInputCommand() && interaction.commandName === 'release') {
 
-  if (!isAllowedChannel(interaction)) {
-    return interaction.reply({
-      content: '❌ Este comando só pode ser usado no canal autorizado.',
-      flags: MessageFlags.Ephemeral
-    });
-  }
+    if (!isAllowedChannel(interaction)) {
+      return interaction.reply({
+        content: '❌ Este comando só pode ser usado no canal autorizado.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
 
-  const { member, user, guild } = interaction;
+    const { member, user, guild } = interaction;
 
-    // Verifica se o jogador tem algum cargo de time
     const hasTeamRole = CONFIG.ROLES.TEAM_ROLES.some(id => member.roles.cache.has(id));
 
     if (!hasTeamRole) {
@@ -366,7 +368,6 @@ client.on(Events.InteractionCreate, async interaction => {
 
     const removedRoles = await releasePlayer(member);
 
-    // Anuncia no canal de contratos
     const channel = guild.channels.cache.get(RELEASE_CHANNEL);
 
     if (channel) {
@@ -385,21 +386,20 @@ client.on(Events.InteractionCreate, async interaction => {
   }
 
   // ══════════════════════════════════════════════════
-  // /FORCE_RELEASE — staff libera qualquer jogador
+  // /FORCE_RELEASE
   // ══════════════════════════════════════════════════
 
- if (interaction.isChatInputCommand() && interaction.commandName === 'force_release') {
+  if (interaction.isChatInputCommand() && interaction.commandName === 'force_release') {
 
-  if (!isAllowedChannel(interaction)) {
-    return interaction.reply({
-      content: '❌ Este comando só pode ser usado no canal autorizado.',
-      flags: MessageFlags.Ephemeral
-    });
-  }
+    if (!isAllowedChannel(interaction)) {
+      return interaction.reply({
+        content: '❌ Este comando só pode ser usado no canal autorizado.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
 
-  const { member, options, guild } = interaction;
+    const { member, options, guild } = interaction;
 
-    // Apenas STAFF pode usar
     if (!CONFIG.ROLES.STAFF_ROLES.some(id => member.roles.cache.has(id))) {
       return interaction.reply({
         content: '❌ Apenas Manager pode usar este comando.',
@@ -417,7 +417,6 @@ client.on(Events.InteractionCreate, async interaction => {
       });
     }
 
-    // Verifica se o jogador tem algum cargo de time
     const hasTeamRole = CONFIG.ROLES.TEAM_ROLES.some(id => targetMember.roles.cache.has(id));
 
     if (!hasTeamRole) {
@@ -431,7 +430,6 @@ client.on(Events.InteractionCreate, async interaction => {
 
     await releasePlayer(targetMember);
 
-    // Anuncia no canal de contratos
     const channel = guild.channels.cache.get(RELEASE_CHANNEL);
 
     if (channel) {
@@ -441,8 +439,8 @@ client.on(Events.InteractionCreate, async interaction => {
         .setDescription(`<@${targetUser.id}> foi liberado do time por <@${member.id}> e agora é um **Free Agent**.`)
         .setThumbnail(targetUser.displayAvatarURL({ dynamic: true, size: 256 }))
         .addFields(
-          { name: 'Jogador',     value: `<@${targetUser.id}>`, inline: true },
-          { name: 'Liberado por', value: `<@${member.id}>`,   inline: true }
+          { name: 'Jogador',      value: `<@${targetUser.id}>`, inline: true },
+          { name: 'Liberado por', value: `<@${member.id}>`,     inline: true }
         )
         .setFooter({ text: `${guild.name} • ${new Date().toLocaleDateString('pt-BR')}` })
         .setTimestamp();
@@ -451,6 +449,29 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     return interaction.editReply({ content: `✅ <@${targetUser.id}> foi liberado do time com sucesso.` });
+  }
+
+  // ══════════════════════════════════════════════════
+  // /ROSTER
+  // ══════════════════════════════════════════════════
+
+  if (interaction.isChatInputCommand() && interaction.commandName === 'roster') {
+
+    const { options, guild } = interaction;
+    const teamRole = options.getRole('time');
+
+    const count = [...activeContracts.values()].filter(
+      c => c.teamRoleId === teamRole.id && c.guildId === guild.id
+    ).length;
+
+    const embed = new EmbedBuilder()
+      .setColor(teamRole.color || 0x0099ff)
+      .setTitle(`📋 ${teamRole.name}`)
+      .setDescription(`**Contratos:** ${count}`)
+      .setFooter({ text: `${guild.name} • ${new Date().toLocaleDateString('pt-BR')}` })
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   }
 
   // ══════════════════════════════════════════════════
