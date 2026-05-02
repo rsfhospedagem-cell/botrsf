@@ -27,8 +27,7 @@ const client = new Client({
 const ALLOWED_RELEASE_CHANNEL = '1469704790345912406';
 const RELEASE_CHANNEL = '1499936712787493057';
 
-// ── Limite máximo de jogadores por time (padrão) ──
-let MAX_ROSTER_SIZE = 15;
+const MAX_ROSTER_SIZE = 15;
 
 // ── Roles de ADM que podem usar /addroster ──
 const ADDROSTER_ADMIN_ROLES = [
@@ -145,7 +144,7 @@ function setupExpirationTimer(id, c, time) {
     if (channel) {
       const embed = new EmbedBuilder()
         .setColor(0xffa500)
-        .setTitle('⏰ Contrato Expirado')
+        .setTitle('Contrato Expirado')
         .setDescription(`O contrato de **${c.signee.username}** com **${c.teamName}** expirou.`)
         .setTimestamp();
       await channel.send({ embeds: [embed] });
@@ -179,7 +178,6 @@ async function releasePlayer(member) {
   return teamRolesFound;
 }
 
-// ── Helper: contar contratos ativos de um time ──
 function getTeamRosterCount(teamRoleId, guildId) {
   return [...activeContracts.values()].filter(
     c => c.teamRoleId === teamRoleId && c.guildId === guildId
@@ -198,7 +196,7 @@ const commands = [
       opt.setName('time').setDescription('Cargo do time').setRequired(true)
     )
     .addStringOption(opt =>
-      opt.setName('posicao').setDescription('Posição').setRequired(true)
+      opt.setName('posicao').setDescription('Posicao').setRequired(true)
     )
     .addStringOption(opt =>
       opt.setName('role').setDescription('Role').setRequired(true)
@@ -208,10 +206,10 @@ const commands = [
     .setName('fa')
     .setDescription('Anunciar Free Agent')
     .addStringOption(opt =>
-      opt.setName('posicao').setDescription('Posição').setRequired(true)
+      opt.setName('posicao').setDescription('Posicao').setRequired(true)
     )
     .addStringOption(opt =>
-      opt.setName('exp').setDescription('Experiência').setRequired(true)
+      opt.setName('exp').setDescription('Experiencia').setRequired(true)
     )
     .addStringOption(opt =>
       opt.setName('plataforma').setDescription('Plataforma').setRequired(true)
@@ -230,7 +228,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('force_release')
-    .setDescription('[MANAGER] Liberar um jogador do time à força')
+    .setDescription('[MANAGER] Liberar um jogador do time a forca')
     .addUserOption(opt =>
       opt.setName('jogador')
         .setDescription('Jogador a ser liberado')
@@ -251,17 +249,17 @@ const commands = [
       opt.setName('time').setDescription('Nome do time que deseja recrutar').setRequired(true)
     )
     .addStringOption(opt =>
-      opt.setName('posicao').setDescription('Posição desejada').setRequired(true)
+      opt.setName('posicao').setDescription('Posicao desejada').setRequired(true)
     )
     .addStringOption(opt =>
-      opt.setName('sobre').setDescription('Informações adicionais').setRequired(true)
+      opt.setName('sobre').setDescription('Informacoes adicionais').setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName('friendly')
     .setDescription('Solicitar um jogo amistoso')
     .addStringOption(opt =>
-      opt.setName('descricao').setDescription('Descrição sobre o friendly').setRequired(true)
+      opt.setName('descricao').setDescription('Descricao sobre o friendly').setRequired(true)
     ),
 
   // ══════════════════════════════════════════════════
@@ -269,10 +267,15 @@ const commands = [
   // ══════════════════════════════════════════════════
   new SlashCommandBuilder()
     .setName('addroster')
-    .setDescription('[ADM] Definir o limite máximo de jogadores por time')
+    .setDescription('[ADM] Registrar manualmente jogadores no roster apos reiniciar o bot')
+    .addRoleOption(opt =>
+      opt.setName('time')
+        .setDescription('Cargo do time')
+        .setRequired(true)
+    )
     .addIntegerOption(opt =>
       opt.setName('quantidade')
-        .setDescription('Novo limite do roster (ex: 5, 7, 10, 15...)')
+        .setDescription('Quantos jogadores registrar no roster deste time (ex: 5, 7...)')
         .setRequired(true)
         .setMinValue(1)
         .setMaxValue(50)
@@ -280,7 +283,7 @@ const commands = [
 ];
 
 client.once(Events.ClientReady, async () => {
-  console.log(`✅ Logado como ${client.user.tag}`);
+  console.log(`Bot logado como ${client.user.tag}`);
 
   client.user.setPresence({
     activities: [{ name: 'Roblox Soccer Federation', type: 0 }],
@@ -291,7 +294,7 @@ client.once(Events.ClientReady, async () => {
 
   try {
     await client.application.commands.set(commands.map(cmd => cmd.toJSON()));
-    console.log('✅ Slash Commands registrados.');
+    console.log('Slash Commands registrados.');
   } catch (err) {
     console.error(err);
   }
@@ -307,29 +310,26 @@ client.on(Events.InteractionCreate, async interaction => {
 
     const { member, options, user, guild } = interaction;
 
-    // Verificar permissão de staff
     if (!CONFIG.ROLES.STAFF_ROLES.some(id => member.roles.cache.has(id))) {
-      return interaction.reply({ content: '❌ Sem permissão.', flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: 'Sem permissao.', flags: MessageFlags.Ephemeral });
     }
 
     const targetUser = options.getUser('jogador');
     const teamRole   = options.getRole('time');
 
-    // ── Verificar limite do roster ──
     const currentRosterCount = getTeamRosterCount(teamRole.id, guild.id);
     if (currentRosterCount >= MAX_ROSTER_SIZE) {
       return interaction.reply({
-        content: `❌ O time **${teamRole.name}** já atingiu o limite máximo de **${MAX_ROSTER_SIZE} jogadores**.\nUse \`/force_release\` para liberar um jogador antes de contratar um novo.`,
+        content: `O time **${teamRole.name}** ja atingiu o limite maximo de **${MAX_ROSTER_SIZE} jogadores**.\nUse /force_release para liberar um jogador antes de contratar um novo.`,
         flags: MessageFlags.Ephemeral
       });
     }
 
-    // ── Buscar o membro e checar se já está em algum time ──
     const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
     if (!targetMember) {
       return interaction.reply({
-        content: '❌ Jogador não encontrado no servidor.',
+        content: 'Jogador nao encontrado no servidor.',
         flags: MessageFlags.Ephemeral
       });
     }
@@ -340,7 +340,7 @@ client.on(Events.InteractionCreate, async interaction => {
       const currentTeamRole = guild.roles.cache.get(currentTeamRoleId);
       const teamName = currentTeamRole ? `**${currentTeamRole.name}**` : 'um time';
       return interaction.reply({
-        content: `❌ <@${targetUser.id}> já faz parte de ${teamName} e não pode receber propostas de contrato.`,
+        content: `<@${targetUser.id}> ja faz parte de ${teamName} e nao pode receber propostas de contrato.`,
         flags: MessageFlags.Ephemeral
       });
     }
@@ -365,7 +365,7 @@ client.on(Events.InteractionCreate, async interaction => {
         name: `${targetUser.username}, um contrato foi proposto por ${user.username}.`,
         iconURL: guild.iconURL({ dynamic: true })
       })
-      .setTitle('📄 Agreement Contract')
+      .setTitle('Agreement Contract')
       .setDescription('By signing this contract, you commit to representing the Contractor and their team with dedication throughout the tournament, competing to the best of your abilities and upholding team loyalty.')
       .addFields(
         { name: 'Signee',      value: `<@${targetUser.id}>`,        inline: true },
@@ -375,7 +375,7 @@ client.on(Events.InteractionCreate, async interaction => {
         { name: 'Role',        value: options.getString('role'),    inline: true },
         { name: 'Vagas restantes', value: `${spotsLeft}/${MAX_ROSTER_SIZE}`, inline: true }
       )
-      .setFooter({ text: `${guild.name} • ${new Date().toLocaleDateString('pt-BR')}` })
+      .setFooter({ text: `${guild.name} - ${new Date().toLocaleDateString('pt-BR')}` })
       .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
@@ -385,16 +385,16 @@ client.on(Events.InteractionCreate, async interaction => {
 
     const channel = guild.channels.cache.get(CONFIG.CHANNELS.CONTRACT_ANNOUNCEMENT);
     if (!channel) {
-      return interaction.reply({ content: '❌ Canal de contratos não encontrado.', flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: 'Canal de contratos nao encontrado.', flags: MessageFlags.Ephemeral });
     }
 
     await channel.send({
-      content: `🔔 <@${targetUser.id}> um contrato foi proposto por <@${user.id}>.`,
+      content: `<@${targetUser.id}> um contrato foi proposto por <@${user.id}>.`,
       embeds: [embed],
       components: [row]
     });
 
-    return interaction.reply({ content: '✅ Contrato enviado.', flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: 'Contrato enviado.', flags: MessageFlags.Ephemeral });
   }
 
   // ══════════════════════════════════════════════════
@@ -408,27 +408,27 @@ client.on(Events.InteractionCreate, async interaction => {
     const embed = new EmbedBuilder()
       .setColor(0x000000)
       .setAuthor({ name: 'Free Agent' })
-      .setTitle(`${user.username} está disponível para ser contratado!`)
+      .setTitle(`${user.username} esta disponivel para ser contratado!`)
       .setDescription(`<@${user.id}>`)
       .addFields(
-        { name: 'Posição',      value: options.getString('posicao')   || 'Não informado', inline: true },
-        { name: 'Plataforma',   value: options.getString('plataforma') || 'Não informado', inline: true },
-        { name: 'Experiência',  value: options.getString('exp')        || 'Não informado', inline: false }
+        { name: 'Posicao',      value: options.getString('posicao')   || 'Nao informado', inline: true },
+        { name: 'Plataforma',   value: options.getString('plataforma') || 'Nao informado', inline: true },
+        { name: 'Experiencia',  value: options.getString('exp')        || 'Nao informado', inline: false }
       )
       .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
       .setFooter({
-        text: `${guild.name} • ${new Date().toLocaleDateString('pt-BR')} • Hoje às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+        text: `${guild.name} - ${new Date().toLocaleDateString('pt-BR')} - Hoje as ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
       })
       .setTimestamp();
 
     const channel = guild.channels.cache.get(CONFIG.CHANNELS.FA_ANNOUNCEMENT);
     if (!channel) {
-      return interaction.reply({ content: '❌ Canal de Free Agent não encontrado.', flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: 'Canal de Free Agent nao encontrado.', flags: MessageFlags.Ephemeral });
     }
 
     await channel.send({ embeds: [embed] });
 
-    return interaction.reply({ content: '✅ Free Agent anunciado com sucesso!', flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: 'Free Agent anunciado com sucesso!', flags: MessageFlags.Ephemeral });
   }
 
   // ══════════════════════════════════════════════════
@@ -439,7 +439,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (!isAllowedChannel(interaction)) {
       return interaction.reply({
-        content: '❌ Este comando só pode ser usado no canal autorizado.',
+        content: 'Este comando so pode ser usado no canal autorizado.',
         flags: MessageFlags.Ephemeral
       });
     }
@@ -450,7 +450,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (!hasTeamRole) {
       return interaction.reply({
-        content: '❌ Você não está em nenhum time.',
+        content: 'Voce nao esta em nenhum time.',
         flags: MessageFlags.Ephemeral
       });
     }
@@ -464,16 +464,16 @@ client.on(Events.InteractionCreate, async interaction => {
     if (channel) {
       const embed = new EmbedBuilder()
         .setColor(0xff4444)
-        .setTitle('🚪 Jogador Liberado')
-        .setDescription(`<@${user.id}> saiu do time e agora é um **Free Agent**.`)
+        .setTitle('Jogador Liberado')
+        .setDescription(`<@${user.id}> saiu do time e agora e um **Free Agent**.`)
         .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
-        .setFooter({ text: `${guild.name} • ${new Date().toLocaleDateString('pt-BR')}` })
+        .setFooter({ text: `${guild.name} - ${new Date().toLocaleDateString('pt-BR')}` })
         .setTimestamp();
 
       await channel.send({ embeds: [embed] });
     }
 
-    return interaction.editReply({ content: '✅ Você foi liberado do seu time e agora é um Free Agent.' });
+    return interaction.editReply({ content: 'Voce foi liberado do seu time e agora e um Free Agent.' });
   }
 
   // ══════════════════════════════════════════════════
@@ -484,7 +484,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (!isAllowedChannel(interaction)) {
       return interaction.reply({
-        content: '❌ Este comando só pode ser usado no canal autorizado.',
+        content: 'Este comando so pode ser usado no canal autorizado.',
         flags: MessageFlags.Ephemeral
       });
     }
@@ -493,7 +493,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (!CONFIG.ROLES.STAFF_ROLES.some(id => member.roles.cache.has(id))) {
       return interaction.reply({
-        content: '❌ Apenas Manager pode usar este comando.',
+        content: 'Apenas Manager pode usar este comando.',
         flags: MessageFlags.Ephemeral
       });
     }
@@ -503,7 +503,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (!targetMember) {
       return interaction.reply({
-        content: '❌ Jogador não encontrado no servidor.',
+        content: 'Jogador nao encontrado no servidor.',
         flags: MessageFlags.Ephemeral
       });
     }
@@ -512,7 +512,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (!hasTeamRole) {
       return interaction.reply({
-        content: `❌ <@${targetUser.id}> não está em nenhum time.`,
+        content: `<@${targetUser.id}> nao esta em nenhum time.`,
         flags: MessageFlags.Ephemeral
       });
     }
@@ -526,20 +526,20 @@ client.on(Events.InteractionCreate, async interaction => {
     if (channel) {
       const embed = new EmbedBuilder()
         .setColor(0xff0000)
-        .setTitle('⚡ Liberação Forçada')
-        .setDescription(`<@${targetUser.id}> foi liberado do time por <@${member.id}> e agora é um **Free Agent**.`)
+        .setTitle('Liberacao Forcada')
+        .setDescription(`<@${targetUser.id}> foi liberado do time por <@${member.id}> e agora e um **Free Agent**.`)
         .setThumbnail(targetUser.displayAvatarURL({ dynamic: true, size: 256 }))
         .addFields(
           { name: 'Jogador',      value: `<@${targetUser.id}>`, inline: true },
           { name: 'Liberado por', value: `<@${member.id}>`,     inline: true }
         )
-        .setFooter({ text: `${guild.name} • ${new Date().toLocaleDateString('pt-BR')}` })
+        .setFooter({ text: `${guild.name} - ${new Date().toLocaleDateString('pt-BR')}` })
         .setTimestamp();
 
       await channel.send({ embeds: [embed] });
     }
 
-    return interaction.editReply({ content: `✅ <@${targetUser.id}> foi liberado do time com sucesso.` });
+    return interaction.editReply({ content: `<@${targetUser.id}> foi liberado do time com sucesso.` });
   }
 
   // ══════════════════════════════════════════════════
@@ -557,14 +557,14 @@ client.on(Events.InteractionCreate, async interaction => {
 
     const embed = new EmbedBuilder()
       .setColor(isFull ? 0xff0000 : (teamRole.color || 0x0099ff))
-      .setTitle(`📋 ${teamRole.name}`)
+      .setTitle(`${teamRole.name}`)
       .setDescription(
         `**Contratos ativos:** ${count}/${MAX_ROSTER_SIZE}\n` +
         (isFull
-          ? '🔴 **Roster cheio** — use `/force_release` para liberar uma vaga.'
-          : `🟢 **Vagas disponíveis:** ${spotsLeft}`)
+          ? 'Roster cheio - use /force_release para liberar uma vaga.'
+          : `Vagas disponiveis: ${spotsLeft}`)
       )
-      .setFooter({ text: `${guild.name} • ${new Date().toLocaleDateString('pt-BR')}` })
+      .setFooter({ text: `${guild.name} - ${new Date().toLocaleDateString('pt-BR')}` })
       .setTimestamp();
 
     return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
@@ -578,33 +578,62 @@ client.on(Events.InteractionCreate, async interaction => {
 
     const { member, options, guild } = interaction;
 
-    // ── Verificar permissão de ADM ──
+    // Verificar permissao de ADM
     const hasAdminRole = ADDROSTER_ADMIN_ROLES.some(id => member.roles.cache.has(id));
     if (!hasAdminRole) {
       return interaction.reply({
-        content: '❌ Apenas Administradores podem usar este comando.',
+        content: 'Apenas Administradores podem usar este comando.',
         flags: MessageFlags.Ephemeral
       });
     }
 
-    const novaQuantidade = options.getInteger('quantidade');
-    const antigaQuantidade = MAX_ROSTER_SIZE;
+    const teamRole   = options.getRole('time');
+    const quantidade = options.getInteger('quantidade');
 
-    MAX_ROSTER_SIZE = novaQuantidade;
+    // Checar se ja tem algo registrado para evitar duplicata acidental
+    const jaRegistrado = getTeamRosterCount(teamRole.id, guild.id);
+
+    if (jaRegistrado > 0) {
+      return interaction.reply({
+        content: `O time **${teamRole.name}** ja possui **${jaRegistrado}** jogador(es) registrado(s) na memoria do bot.\nSe quiser reregistrar, use /force_release nos jogadores primeiro para limpar.`,
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    // Criar entradas no activeContracts representando cada vaga ocupada
+    for (let i = 0; i < quantidade; i++) {
+      const fakeId = `MANUAL_${teamRole.id}_${Date.now()}_${i}`;
+      activeContracts.set(fakeId, {
+        signee:     { id: `manual_slot_${i}`, username: `Slot Manual ${i + 1}` },
+        contractor: { id: member.id, username: member.user.username },
+        teamName:   teamRole.name,
+        teamRoleId: teamRole.id,
+        position:   'Manual',
+        role:       'Manual',
+        guildId:    guild.id,
+        signedAt:   new Date(),
+        expiresAt:  new Date(Date.now() + CONFIG.CONTRACT_EXPIRATION),
+        manual:     true
+      });
+    }
+
+    saveContracts();
+
+    const total = getTeamRosterCount(teamRole.id, guild.id);
 
     const embed = new EmbedBuilder()
       .setColor(0x00bfff)
-      .setTitle('📝 Limite de Roster Atualizado')
-      .setDescription(`O limite máximo de jogadores por time foi alterado com sucesso.`)
+      .setTitle('Roster Registrado Manualmente')
+      .setDescription(`O roster do time **${teamRole.name}** foi restaurado apos reinicializacao do bot.`)
       .addFields(
-        { name: '🔴 Antes',  value: `${antigaQuantidade} jogadores`, inline: true },
-        { name: '🟢 Agora',  value: `${novaQuantidade} jogadores`,   inline: true },
-        { name: '👤 Alterado por', value: `<@${member.id}>`,         inline: false }
+        { name: 'Jogadores adicionados', value: `${quantidade}`,               inline: true },
+        { name: 'Total atual no roster', value: `${total}/${MAX_ROSTER_SIZE}`, inline: true },
+        { name: 'Registrado por',        value: `<@${member.id}>`,             inline: false }
       )
-      .setFooter({ text: `${guild.name} • ${new Date().toLocaleDateString('pt-BR')}` })
+      .setFooter({ text: `${guild.name} - ${new Date().toLocaleDateString('pt-BR')}` })
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed] });
+    return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   }
 
   // ══════════════════════════════════════════════════
@@ -617,13 +646,13 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (channelId !== ALLOWED_RELEASE_CHANNEL) {
       return interaction.reply({
-        content: '❌ Este comando só pode ser usado no canal autorizado.',
+        content: 'Este comando so pode ser usado no canal autorizado.',
         flags: MessageFlags.Ephemeral
       });
     }
 
     if (!CONFIG.ROLES.STAFF_ROLES.some(id => member.roles.cache.has(id))) {
-      return interaction.reply({ content: '❌ Apenas managers podem usar este comando.', flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: 'Apenas managers podem usar este comando.', flags: MessageFlags.Ephemeral });
     }
 
     const teamName = options.getString('time');
@@ -632,7 +661,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
     const channel = guild.channels.cache.get(CONFIG.CHANNELS.SCOUTING_ANNOUNCEMENT);
     if (!channel) {
-      return interaction.reply({ content: '❌ Canal de scouting não encontrado.', flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: 'Canal de scouting nao encontrado.', flags: MessageFlags.Ephemeral });
     }
 
     const embed = new EmbedBuilder()
@@ -641,22 +670,22 @@ client.on(Events.InteractionCreate, async interaction => {
         name: 'Scouting',
         iconURL: guild.iconURL({ dynamic: true })
       })
-      .setTitle(`🔍 ${user.username} está recrutando!`)
-      .setDescription(`<@${user.id}> está em busca de um jogador para o seu time.`)
+      .setTitle(`${user.username} esta recrutando!`)
+      .setDescription(`<@${user.id}> esta em busca de um jogador para o seu time.`)
       .addFields(
-        { name: '🏟️ Time',     value: teamName, inline: true },
-        { name: '🎯 Posição',  value: position, inline: true },
-        { name: '📝 Sobre',    value: about,    inline: false }
+        { name: 'Time',    value: teamName, inline: true },
+        { name: 'Posicao', value: position, inline: true },
+        { name: 'Sobre',   value: about,    inline: false }
       )
       .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
       .setFooter({
-        text: `${guild.name} • ${new Date().toLocaleDateString('pt-BR')} • Hoje às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+        text: `${guild.name} - ${new Date().toLocaleDateString('pt-BR')} - Hoje as ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
       })
       .setTimestamp();
 
     await channel.send({ embeds: [embed] });
 
-    return interaction.reply({ content: '✅ Scouting anunciado com sucesso!', flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: 'Scouting anunciado com sucesso!', flags: MessageFlags.Ephemeral });
   }
 
   // ══════════════════════════════════════════════════
@@ -669,20 +698,20 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (channelId !== ALLOWED_RELEASE_CHANNEL) {
       return interaction.reply({
-        content: '❌ Este comando só pode ser usado no canal autorizado.',
+        content: 'Este comando so pode ser usado no canal autorizado.',
         flags: MessageFlags.Ephemeral
       });
     }
 
     if (!CONFIG.ROLES.STAFF_ROLES.some(id => member.roles.cache.has(id))) {
-      return interaction.reply({ content: '❌ Apenas managers podem usar este comando.', flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: 'Apenas managers podem usar este comando.', flags: MessageFlags.Ephemeral });
     }
 
     const description = options.getString('descricao');
 
     const channel = guild.channels.cache.get(CONFIG.CHANNELS.FRIENDLY_ANNOUNCEMENT);
     if (!channel) {
-      return interaction.reply({ content: '❌ Canal de friendly não encontrado.', flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: 'Canal de friendly nao encontrado.', flags: MessageFlags.Ephemeral });
     }
 
     const embed = new EmbedBuilder()
@@ -691,24 +720,24 @@ client.on(Events.InteractionCreate, async interaction => {
         name: 'Friendly',
         iconURL: guild.iconURL({ dynamic: true })
       })
-      .setTitle(`⚽ ${user.username} está procurando um amistoso!`)
-      .setDescription(`<@${user.id}> está em busca de um jogo amistoso.`)
+      .setTitle(`${user.username} esta procurando um amistoso!`)
+      .setDescription(`<@${user.id}> esta em busca de um jogo amistoso.`)
       .addFields(
-        { name: '📝 Descrição', value: description, inline: false }
+        { name: 'Descricao', value: description, inline: false }
       )
       .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
       .setFooter({
-        text: `${guild.name} • ${new Date().toLocaleDateString('pt-BR')} • Hoje às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+        text: `${guild.name} - ${new Date().toLocaleDateString('pt-BR')} - Hoje as ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
       })
       .setTimestamp();
 
     await channel.send({ embeds: [embed] });
 
-    return interaction.reply({ content: '✅ Friendly anunciado com sucesso!', flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: 'Friendly anunciado com sucesso!', flags: MessageFlags.Ephemeral });
   }
 
   // ══════════════════════════════════════════════════
-  // BOTÕES (accept / reject contract)
+  // BOTOES (accept / reject contract)
   // ══════════════════════════════════════════════════
 
   if (interaction.isButton()) {
@@ -720,12 +749,11 @@ client.on(Events.InteractionCreate, async interaction => {
     if (!data) return;
 
     if (interaction.user.id !== data.signee.id) {
-      return interaction.reply({ content: '❌ Esse contrato não é seu.', flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: 'Esse contrato nao e seu.', flags: MessageFlags.Ephemeral });
     }
 
     if (action === 'accept') {
 
-      // ── Verificar limite do roster no momento do accept (race condition) ──
       const currentRosterCount = getTeamRosterCount(data.teamRoleId, data.guildId);
       if (currentRosterCount >= MAX_ROSTER_SIZE) {
         pendingContracts.delete(contractId);
@@ -736,12 +764,11 @@ client.on(Events.InteractionCreate, async interaction => {
         );
 
         return interaction.update({
-          content: `❌ Contrato cancelado: o time **${data.teamName}** já atingiu o limite de **${MAX_ROSTER_SIZE} jogadores**.`,
+          content: `Contrato cancelado: o time **${data.teamName}** ja atingiu o limite de **${MAX_ROSTER_SIZE} jogadores**.`,
           components: [disabledRow]
         });
       }
 
-      // ── Verificar se já está em algum time (race condition) ──
       const member = await interaction.guild.members.fetch(data.signee.id);
       const alreadyInTeam = CONFIG.ROLES.TEAM_ROLES.some(id => member.roles.cache.has(id));
 
@@ -754,7 +781,7 @@ client.on(Events.InteractionCreate, async interaction => {
         );
 
         return interaction.update({
-          content: `❌ Contrato cancelado: <@${data.signee.id}> já está em um time.`,
+          content: `Contrato cancelado: <@${data.signee.id}> ja esta em um time.`,
           components: [disabledRow]
         });
       }
@@ -774,7 +801,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
       const acceptedEmbed = new EmbedBuilder()
         .setColor('#00ff88')
-        .setTitle('✅ Contract Accepted')
+        .setTitle('Contract Accepted')
         .setDescription(`<@${data.signee.id}> has successfully signed with **${data.teamName}**`)
         .addFields(
           { name: 'Signee',     value: `<@${data.signee.id}>`,                      inline: true },
@@ -785,7 +812,7 @@ client.on(Events.InteractionCreate, async interaction => {
           { name: 'Roster',     value: `${newCount}/${MAX_ROSTER_SIZE}`,             inline: true },
           { name: 'Signed on',  value: `<t:${Math.floor(Date.now() / 1000)}:F>`,    inline: false }
         )
-        .setFooter({ text: `${interaction.guild.name} • ${new Date().toLocaleDateString('pt-BR')}` })
+        .setFooter({ text: `${interaction.guild.name} - ${new Date().toLocaleDateString('pt-BR')}` })
         .setTimestamp();
 
       const disabledRow = new ActionRowBuilder().addComponents(
@@ -794,7 +821,7 @@ client.on(Events.InteractionCreate, async interaction => {
       );
 
       await interaction.update({
-        content: `✅ <@${data.signee.id}> accepted the contract!`,
+        content: `<@${data.signee.id}> accepted the contract!`,
         embeds: [acceptedEmbed],
         components: [disabledRow]
       });
@@ -806,7 +833,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
       const rejectedEmbed = new EmbedBuilder()
         .setColor('#0d0d0d')
-        .setTitle('❌ Contract Rejected')
+        .setTitle('Contract Rejected')
         .setDescription(`<@${data.signee.id}> has rejected the contract offer from **${data.teamName}**`)
         .addFields(
           { name: 'Signee',      value: `<@${data.signee.id}>`,                    inline: true },
@@ -816,7 +843,7 @@ client.on(Events.InteractionCreate, async interaction => {
           { name: 'Role',        value: data.role,                                  inline: true },
           { name: 'Rejected on', value: `<t:${Math.floor(Date.now() / 1000)}:F>`,  inline: false }
         )
-        .setFooter({ text: `${interaction.guild.name} • ${new Date().toLocaleDateString('pt-BR')}` })
+        .setFooter({ text: `${interaction.guild.name} - ${new Date().toLocaleDateString('pt-BR')}` })
         .setTimestamp();
 
       const disabledRow = new ActionRowBuilder().addComponents(
@@ -825,7 +852,7 @@ client.on(Events.InteractionCreate, async interaction => {
       );
 
       await interaction.update({
-        content: `❌ <@${data.signee.id}> rejected the contract.`,
+        content: `<@${data.signee.id}> rejected the contract.`,
         embeds: [rejectedEmbed],
         components: [disabledRow]
       });
