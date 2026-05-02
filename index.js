@@ -27,6 +27,9 @@ const client = new Client({
 const ALLOWED_RELEASE_CHANNEL = '1469704790345912406';
 const RELEASE_CHANNEL = '1499936712787493057';
 
+// ── Limite máximo de jogadores por time ──
+const MAX_ROSTER_SIZE = 15;
+
 function isAllowedChannel(interaction) {
   return interaction?.channelId === ALLOWED_RELEASE_CHANNEL;
 }
@@ -164,6 +167,13 @@ async function releasePlayer(member) {
   return teamRolesFound;
 }
 
+// ── Helper: contar contratos ativos de um time ──
+function getTeamRosterCount(teamRoleId, guildId) {
+  return [...activeContracts.values()].filter(
+    c => c.teamRoleId === teamRoleId && c.guildId === guildId
+  ).length;
+}
+
 const commands = [
 
   new SlashCommandBuilder()
@@ -259,7 +269,16 @@ client.on(Events.InteractionCreate, async interaction => {
     const targetUser = options.getUser('jogador');
     const teamRole   = options.getRole('time');
 
-    // ── CORREÇÃO: buscar o membro e checar se já está em algum time ──
+    // ── Verificar limite do roster ──
+    const currentRosterCount = getTeamRosterCount(teamRole.id, guild.id);
+    if (currentRosterCount >= MAX_ROSTER_SIZE) {
+      return interaction.reply({
+        content: `❌ O time **${teamRole.name}** já atingiu o limite máximo de **${MAX_ROSTER_SIZE} jogadores**.\nUse \`/force_release\` para liberar um jogador antes de contratar um novo.`,
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    // ── Buscar o membro e checar se já está em algum time ──
     const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
     if (!targetMember) {
@@ -279,7 +298,6 @@ client.on(Events.InteractionCreate, async interaction => {
         flags: MessageFlags.Ephemeral
       });
     }
-    // ─────────────────────────────────────────────────────────────────
 
     const contractId = `C_${Date.now()}_${user.id}`;
 
@@ -292,6 +310,8 @@ client.on(Events.InteractionCreate, async interaction => {
       role:        options.getString('role'),
       guildId:     guild.id
     });
+
+    const spotsLeft = MAX_ROSTER_SIZE - currentRosterCount - 1; // -1 pois este contrato está sendo enviado
 
     const embed = new EmbedBuilder()
       .setColor('#0d0d0d')
@@ -306,7 +326,8 @@ client.on(Events.InteractionCreate, async interaction => {
         { name: 'Contractor',  value: `<@${user.id}>`,              inline: true },
         { name: 'Team',        value: teamRole.name,                inline: true },
         { name: 'Position',    value: options.getString('posicao'), inline: true },
-        { name: 'Role',        value: options.getString('role'),    inline: true }
+        { name: 'Role',        value: options.getString('role'),    inline: true },
+        { name: 'Vagas restantes', value: `${spotsLeft}/${MAX_ROSTER_SIZE}`, inline: true }
       )
       .setFooter({ text: `${guild.name} • ${new Date().toLocaleDateString('pt-BR')}` })
       .setTimestamp();
@@ -484,14 +505,19 @@ client.on(Events.InteractionCreate, async interaction => {
     const { options, guild } = interaction;
     const teamRole = options.getRole('time');
 
-    const count = [...activeContracts.values()].filter(
-      c => c.teamRoleId === teamRole.id && c.guildId === guild.id
-    ).length;
+    const count = getTeamRosterCount(teamRole.id, guild.id);
+    const spotsLeft = MAX_ROSTER_SIZE - count;
+    const isFull = spotsLeft <= 0;
 
     const embed = new EmbedBuilder()
-      .setColor(teamRole.color || 0x0099ff)
+      .setColor(isFull ? 0xff0000 : (teamRole.color || 0x0099ff))
       .setTitle(`📋 ${teamRole.name}`)
-      .setDescription(`**Contratos:** ${count}`)
+      .setDescription(
+        `**Contratos ativos:** ${count}/${MAX_ROSTER_SIZE}\n` +
+        (isFull
+          ? '🔴 **Roster cheio** — use `/force_release` para liberar uma vaga.'
+          : `🟢 **Vagas disponíveis:** ${spotsLeft}`)
+      )
       .setFooter({ text: `${guild.name} • ${new Date().toLocaleDateString('pt-BR')}` })
       .setTimestamp();
 
@@ -516,7 +542,23 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (action === 'accept') {
 
-      // ── CORREÇÃO: segunda verificação no momento do accept (race condition) ──
+      // ── Verificar limite do roster no momento do accept (race condition) ──
+      const currentRosterCount = getTeamRosterCount(data.teamRoleId, data.guildId);
+      if (currentRosterCount >= MAX_ROSTER_SIZE) {
+        pendingContracts.delete(contractId);
+
+        const disabledRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('accepted_button').setLabel('Accept').setStyle(ButtonStyle.Success).setDisabled(true),
+          new ButtonBuilder().setCustomId('rejected_button').setLabel('Reject').setStyle(ButtonStyle.Danger).setDisabled(true)
+        );
+
+        return interaction.update({
+          content: `❌ Contrato cancelado: o time **${data.teamName}** já atingiu o limite de **${MAX_ROSTER_SIZE} jogadores**.`,
+          components: [disabledRow]
+        });
+      }
+
+      // ── Verificar se já está em algum time (race condition) ──
       const member = await interaction.guild.members.fetch(data.signee.id);
       const alreadyInTeam = CONFIG.ROLES.TEAM_ROLES.some(id => member.roles.cache.has(id));
 
@@ -533,7 +575,6 @@ client.on(Events.InteractionCreate, async interaction => {
           components: [disabledRow]
         });
       }
-      // ─────────────────────────────────────────────────────────────────────────
 
       const expiresAt  = new Date(Date.now() + CONFIG.CONTRACT_EXPIRATION);
       const activeData = { ...data, signedAt: new Date(), expiresAt };
@@ -546,6 +587,8 @@ client.on(Events.InteractionCreate, async interaction => {
       if (data.teamRoleId) await member.roles.add(data.teamRoleId);
       await member.roles.remove(CONFIG.ROLES.FA_ROLE).catch(() => {});
 
+      const newCount = getTeamRosterCount(data.teamRoleId, data.guildId);
+
       const acceptedEmbed = new EmbedBuilder()
         .setColor('#00ff88')
         .setTitle('✅ Contract Accepted')
@@ -556,6 +599,7 @@ client.on(Events.InteractionCreate, async interaction => {
           { name: 'Team',       value: data.teamName,                                inline: true },
           { name: 'Position',   value: data.position,                                inline: true },
           { name: 'Role',       value: data.role,                                    inline: true },
+          { name: 'Roster',     value: `${newCount}/${MAX_ROSTER_SIZE}`,             inline: true },
           { name: 'Signed on',  value: `<t:${Math.floor(Date.now() / 1000)}:F>`,    inline: false }
         )
         .setFooter({ text: `${interaction.guild.name} • ${new Date().toLocaleDateString('pt-BR')}` })
