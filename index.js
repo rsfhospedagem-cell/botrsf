@@ -25,6 +25,7 @@ const client = new Client({
 });
 
 const ALLOWED_RELEASE_CHANNEL = '1499936712787493057';
+const RELEASE_CHANNEL = '1499936712787493057';
 
 function isAllowedChannel(interaction) {
   return interaction?.channelId === ALLOWED_RELEASE_CHANNEL;
@@ -366,7 +367,7 @@ client.on(Events.InteractionCreate, async interaction => {
     const removedRoles = await releasePlayer(member);
 
     // Anuncia no canal de contratos
-    const channel = guild.channels.cache.get(CONFIG.CHANNELS.CONTRACT_ANNOUNCEMENT);
+    const channel = guild.channels.cache.get(RELEASE_CHANNEL);
 
     if (channel) {
       const embed = new EmbedBuilder()
@@ -431,7 +432,7 @@ client.on(Events.InteractionCreate, async interaction => {
     await releasePlayer(targetMember);
 
     // Anuncia no canal de contratos
-    const channel = guild.channels.cache.get(CONFIG.CHANNELS.CONTRACT_ANNOUNCEMENT);
+    const channel = guild.channels.cache.get(RELEASE_CHANNEL);
 
     if (channel) {
       const embed = new EmbedBuilder()
