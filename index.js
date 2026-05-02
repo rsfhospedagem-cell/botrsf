@@ -40,6 +40,7 @@ const CONFIG = {
     FA_ANNOUNCEMENT: '1469704790576468147',
     FRIENDLY_ANNOUNCEMENT: '1499844992162857090',
     SCRIM_ANNOUNCEMENT: '1469704790198976723',
+    SCOUTING_ANNOUNCEMENT: '1469704790576468148',
   },
 
   ALLOWED_CHANNELS: {
@@ -230,6 +231,26 @@ const commands = [
     .setDescription('Ver quantidade de jogadores contratados no time')
     .addRoleOption(opt =>
       opt.setName('time').setDescription('Cargo do time').setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('scouting')
+    .setDescription('Recrutar um jogador para o seu time')
+    .addStringOption(opt =>
+      opt.setName('time').setDescription('Nome do time que deseja recrutar').setRequired(true)
+    )
+    .addStringOption(opt =>
+      opt.setName('posicao').setDescription('Posição desejada').setRequired(true)
+    )
+    .addStringOption(opt =>
+      opt.setName('sobre').setDescription('Informações adicionais').setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('friendly')
+    .setDescription('Solicitar um jogo amistoso')
+    .addStringOption(opt =>
+      opt.setName('descricao').setDescription('Descrição sobre o friendly').setRequired(true)
     ),
 ];
 
@@ -522,6 +543,106 @@ client.on(Events.InteractionCreate, async interaction => {
       .setTimestamp();
 
     return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+  }
+
+  // ══════════════════════════════════════════════════
+  // /SCOUTING
+  // ══════════════════════════════════════════════════
+
+  if (interaction.isChatInputCommand() && interaction.commandName === 'scouting') {
+
+    const { member, options, user, guild, channelId } = interaction;
+
+    if (channelId !== ALLOWED_RELEASE_CHANNEL) {
+      return interaction.reply({
+        content: '❌ Este comando só pode ser usado no canal autorizado.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    if (!CONFIG.ROLES.STAFF_ROLES.some(id => member.roles.cache.has(id))) {
+      return interaction.reply({ content: '❌ Apenas managers podem usar este comando.', flags: MessageFlags.Ephemeral });
+    }
+
+    const teamName = options.getString('time');
+    const position = options.getString('posicao');
+    const about    = options.getString('sobre');
+
+    const channel = guild.channels.cache.get(CONFIG.CHANNELS.SCOUTING_ANNOUNCEMENT);
+    if (!channel) {
+      return interaction.reply({ content: '❌ Canal de scouting não encontrado.', flags: MessageFlags.Ephemeral });
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor(0x000000)
+      .setAuthor({
+        name: 'Scouting',
+        iconURL: guild.iconURL({ dynamic: true })
+      })
+      .setTitle(`🔍 ${user.username} está recrutando!`)
+      .setDescription(`<@${user.id}> está em busca de um jogador para o seu time.`)
+      .addFields(
+        { name: '🏟️ Time',     value: teamName, inline: true },
+        { name: '🎯 Posição',  value: position, inline: true },
+        { name: '📝 Sobre',    value: about,    inline: false }
+      )
+      .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
+      .setFooter({
+        text: `${guild.name} • ${new Date().toLocaleDateString('pt-BR')} • Hoje às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+      })
+      .setTimestamp();
+
+    await channel.send({ embeds: [embed] });
+
+    return interaction.reply({ content: '✅ Scouting anunciado com sucesso!', flags: MessageFlags.Ephemeral });
+  }
+
+  // ══════════════════════════════════════════════════
+  // /FRIENDLY
+  // ══════════════════════════════════════════════════
+
+  if (interaction.isChatInputCommand() && interaction.commandName === 'friendly') {
+
+    const { member, options, user, guild, channelId } = interaction;
+
+    if (channelId !== ALLOWED_RELEASE_CHANNEL) {
+      return interaction.reply({
+        content: '❌ Este comando só pode ser usado no canal autorizado.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    if (!CONFIG.ROLES.STAFF_ROLES.some(id => member.roles.cache.has(id))) {
+      return interaction.reply({ content: '❌ Apenas managers podem usar este comando.', flags: MessageFlags.Ephemeral });
+    }
+
+    const description = options.getString('descricao');
+
+    const channel = guild.channels.cache.get(CONFIG.CHANNELS.FRIENDLY_ANNOUNCEMENT);
+    if (!channel) {
+      return interaction.reply({ content: '❌ Canal de friendly não encontrado.', flags: MessageFlags.Ephemeral });
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor(0x000000)
+      .setAuthor({
+        name: 'Friendly',
+        iconURL: guild.iconURL({ dynamic: true })
+      })
+      .setTitle(`⚽ ${user.username} está procurando um amistoso!`)
+      .setDescription(`<@${user.id}> está em busca de um jogo amistoso.`)
+      .addFields(
+        { name: '📝 Descrição', value: description, inline: false }
+      )
+      .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
+      .setFooter({
+        text: `${guild.name} • ${new Date().toLocaleDateString('pt-BR')} • Hoje às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+      })
+      .setTimestamp();
+
+    await channel.send({ embeds: [embed] });
+
+    return interaction.reply({ content: '✅ Friendly anunciado com sucesso!', flags: MessageFlags.Ephemeral });
   }
 
   // ══════════════════════════════════════════════════
