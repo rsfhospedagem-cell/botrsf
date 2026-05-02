@@ -243,6 +243,16 @@ client.once(Events.ClientReady, async () => {
 
   console.log(`✅ Logado como ${client.user.tag}`);
 
+  client.user.setPresence({
+  activities: [
+    {
+      name: 'Roblox Soccer Federation',
+      type: 0
+    }
+  ],
+  status: 'online'
+});
+
   loadContracts();
 
   try {
