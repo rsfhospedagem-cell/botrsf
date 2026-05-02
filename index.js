@@ -251,12 +251,36 @@ client.on(Events.InteractionCreate, async interaction => {
 
     const { member, options, user, guild } = interaction;
 
+    // Verificar permissão de staff
     if (!CONFIG.ROLES.STAFF_ROLES.some(id => member.roles.cache.has(id))) {
       return interaction.reply({ content: '❌ Sem permissão.', flags: MessageFlags.Ephemeral });
     }
 
     const targetUser = options.getUser('jogador');
     const teamRole   = options.getRole('time');
+
+    // ── CORREÇÃO: buscar o membro e checar se já está em algum time ──
+    const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
+
+    if (!targetMember) {
+      return interaction.reply({
+        content: '❌ Jogador não encontrado no servidor.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    const currentTeamRoleId = CONFIG.ROLES.TEAM_ROLES.find(id => targetMember.roles.cache.has(id));
+
+    if (currentTeamRoleId) {
+      const currentTeamRole = guild.roles.cache.get(currentTeamRoleId);
+      const teamName = currentTeamRole ? `**${currentTeamRole.name}**` : 'um time';
+      return interaction.reply({
+        content: `❌ <@${targetUser.id}> já faz parte de ${teamName} e não pode receber propostas de contrato.`,
+        flags: MessageFlags.Ephemeral
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────
+
     const contractId = `C_${Date.now()}_${user.id}`;
 
     pendingContracts.set(contractId, {
@@ -492,6 +516,25 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (action === 'accept') {
 
+      // ── CORREÇÃO: segunda verificação no momento do accept (race condition) ──
+      const member = await interaction.guild.members.fetch(data.signee.id);
+      const alreadyInTeam = CONFIG.ROLES.TEAM_ROLES.some(id => member.roles.cache.has(id));
+
+      if (alreadyInTeam) {
+        pendingContracts.delete(contractId);
+
+        const disabledRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('accepted_button').setLabel('Accept').setStyle(ButtonStyle.Success).setDisabled(true),
+          new ButtonBuilder().setCustomId('rejected_button').setLabel('Reject').setStyle(ButtonStyle.Danger).setDisabled(true)
+        );
+
+        return interaction.update({
+          content: `❌ Contrato cancelado: <@${data.signee.id}> já está em um time.`,
+          components: [disabledRow]
+        });
+      }
+      // ─────────────────────────────────────────────────────────────────────────
+
       const expiresAt  = new Date(Date.now() + CONFIG.CONTRACT_EXPIRATION);
       const activeData = { ...data, signedAt: new Date(), expiresAt };
 
@@ -500,7 +543,6 @@ client.on(Events.InteractionCreate, async interaction => {
       saveContracts();
       setupExpirationTimer(contractId, activeData, CONFIG.CONTRACT_EXPIRATION);
 
-      const member = await interaction.guild.members.fetch(data.signee.id);
       if (data.teamRoleId) await member.roles.add(data.teamRoleId);
       await member.roles.remove(CONFIG.ROLES.FA_ROLE).catch(() => {});
 
