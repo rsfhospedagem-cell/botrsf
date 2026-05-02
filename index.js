@@ -27,8 +27,19 @@ const client = new Client({
 const ALLOWED_RELEASE_CHANNEL = '1469704790345912406';
 const RELEASE_CHANNEL = '1499936712787493057';
 
-// ── Limite máximo de jogadores por time ──
-const MAX_ROSTER_SIZE = 15;
+// ── Limite máximo de jogadores por time (padrão) ──
+let MAX_ROSTER_SIZE = 15;
+
+// ── Roles de ADM que podem usar /addroster ──
+const ADDROSTER_ADMIN_ROLES = [
+  '1499832950068613381',
+  '1469704789486207001',
+  '1469704789486206999',
+  '1469704789486206998',
+  '1469704789486206997',
+  '1469704789486206996',
+  '1469704789414772970'
+];
 
 function isAllowedChannel(interaction) {
   return interaction?.channelId === ALLOWED_RELEASE_CHANNEL;
@@ -252,6 +263,20 @@ const commands = [
     .addStringOption(opt =>
       opt.setName('descricao').setDescription('Descrição sobre o friendly').setRequired(true)
     ),
+
+  // ══════════════════════════════════════════════════
+  // /ADDROSTER
+  // ══════════════════════════════════════════════════
+  new SlashCommandBuilder()
+    .setName('addroster')
+    .setDescription('[ADM] Definir o limite máximo de jogadores por time')
+    .addIntegerOption(opt =>
+      opt.setName('quantidade')
+        .setDescription('Novo limite do roster (ex: 5, 7, 10, 15...)')
+        .setRequired(true)
+        .setMinValue(1)
+        .setMaxValue(50)
+    ),
 ];
 
 client.once(Events.ClientReady, async () => {
@@ -332,7 +357,7 @@ client.on(Events.InteractionCreate, async interaction => {
       guildId:     guild.id
     });
 
-    const spotsLeft = MAX_ROSTER_SIZE - currentRosterCount - 1; // -1 pois este contrato está sendo enviado
+    const spotsLeft = MAX_ROSTER_SIZE - currentRosterCount - 1;
 
     const embed = new EmbedBuilder()
       .setColor('#0d0d0d')
@@ -543,6 +568,43 @@ client.on(Events.InteractionCreate, async interaction => {
       .setTimestamp();
 
     return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+  }
+
+  // ══════════════════════════════════════════════════
+  // /ADDROSTER
+  // ══════════════════════════════════════════════════
+
+  if (interaction.isChatInputCommand() && interaction.commandName === 'addroster') {
+
+    const { member, options, guild } = interaction;
+
+    // ── Verificar permissão de ADM ──
+    const hasAdminRole = ADDROSTER_ADMIN_ROLES.some(id => member.roles.cache.has(id));
+    if (!hasAdminRole) {
+      return interaction.reply({
+        content: '❌ Apenas Administradores podem usar este comando.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    const novaQuantidade = options.getInteger('quantidade');
+    const antigaQuantidade = MAX_ROSTER_SIZE;
+
+    MAX_ROSTER_SIZE = novaQuantidade;
+
+    const embed = new EmbedBuilder()
+      .setColor(0x00bfff)
+      .setTitle('📝 Limite de Roster Atualizado')
+      .setDescription(`O limite máximo de jogadores por time foi alterado com sucesso.`)
+      .addFields(
+        { name: '🔴 Antes',  value: `${antigaQuantidade} jogadores`, inline: true },
+        { name: '🟢 Agora',  value: `${novaQuantidade} jogadores`,   inline: true },
+        { name: '👤 Alterado por', value: `<@${member.id}>`,         inline: false }
+      )
+      .setFooter({ text: `${guild.name} • ${new Date().toLocaleDateString('pt-BR')}` })
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embed] });
   }
 
   // ══════════════════════════════════════════════════
