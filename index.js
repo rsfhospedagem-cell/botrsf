@@ -286,7 +286,7 @@ client.once(Events.ClientReady, async () => {
   console.log(`Bot logado como ${client.user.tag}`);
 
   client.user.setPresence({
-    activities: [{ name: 'Roblox Soccer Federation', type: 0 }],
+    activities: [{ name: 'Ro-Soccer Foundation', type: 0 }],
     status: 'online'
   });
 
