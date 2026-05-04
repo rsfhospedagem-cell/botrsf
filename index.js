@@ -7,9 +7,6 @@ const {
   ButtonBuilder, 
   ButtonStyle, 
   SlashCommandBuilder, 
-  ModalBuilder, 
-  TextInputBuilder, 
-  TextInputStyle, 
   MessageFlags
 } = require('discord.js');
 
@@ -28,17 +25,6 @@ const ALLOWED_RELEASE_CHANNEL = '1469704790345912406';
 const RELEASE_CHANNEL = '1499936712787493057';
 
 const MAX_ROSTER_SIZE = 15;
-
-// ── Roles de ADM que podem usar /addroster ──
-const ADDROSTER_ADMIN_ROLES = [
-  '1499832950068613381',
-  '1469704789486207001',
-  '1469704789486206999',
-  '1469704789486206998',
-  '1469704789486206997',
-  '1469704789486206996',
-  '1469704789414772970'
-];
 
 function isAllowedChannel(interaction) {
   return interaction?.channelId === ALLOWED_RELEASE_CHANNEL;
@@ -109,21 +95,89 @@ function loadContracts() {
     const data = JSON.parse(fs.readFileSync(CONTRACTS_FILE, 'utf8'));
     const now = Date.now();
     for (const [id, c] of Object.entries(data)) {
-      const expiresAt = new Date(c.expiresAt).getTime();
-      if (expiresAt > now) {
+      const expiresAt = c.expiresAt
+        ? new Date(c.expiresAt).getTime()
+        : null;
+
+      if (!expiresAt || expiresAt > now) {
         activeContracts.set(id, {
           ...c,
           signedAt: new Date(c.signedAt),
-          expiresAt: new Date(c.expiresAt)
+          expiresAt: c.expiresAt ? new Date(c.expiresAt) : null
         });
-        const remaining = expiresAt - now;
-        setupExpirationTimer(id, c, remaining);
+
+        if (expiresAt) {
+          const remaining = expiresAt - now;
+          setupExpirationTimer(id, c, remaining);
+        }
       }
     }
   } catch (err) {
-    console.error(err);
+    console.error('Erro ao carregar contratos:', err);
   }
 }
+
+// ══════════════════════════════════════════════════
+// SINCRONIZAÇÃO AUTOMÁTICA DE ROSTER
+// ══════════════════════════════════════════════════
+
+async function syncRostersFromRoles() {
+  console.log('[Sync] Iniciando sincronização de rosters...');
+
+  for (const guild of client.guilds.cache.values()) {
+    try {
+      const members = await guild.members.fetch();
+
+      for (const roleId of CONFIG.ROLES.TEAM_ROLES) {
+        const role = guild.roles.cache.get(roleId);
+        if (!role) continue;
+
+        const membersWithRole = members.filter(m => m.roles.cache.has(roleId));
+
+        for (const member of membersWithRole.values()) {
+          const autoId = `AUTO_${guild.id}_${member.id}`;
+
+          // Evitar duplicatas: pular se já existe contrato para este membro neste guild
+          const alreadyExists = [...activeContracts.values()].some(
+            c => c.signee.id === member.id && c.guildId === guild.id
+          );
+
+          if (alreadyExists) continue;
+
+          activeContracts.set(autoId, {
+            signee: {
+              id: member.id,
+              username: member.user.username
+            },
+            contractor: {
+              id: 'system',
+              username: 'System'
+            },
+            teamName:   role.name,
+            teamRoleId: role.id,
+            position:   'Unknown',
+            role:       'Player',
+            guildId:    guild.id,
+            signedAt:   new Date(),
+            expiresAt:  null,
+            automatic:  true
+          });
+
+          console.log(`[Sync] Adicionado: ${member.user.username} → ${role.name}`);
+        }
+      }
+    } catch (err) {
+      console.error(`[Sync] Erro na guild ${guild.id}:`, err);
+    }
+  }
+
+  saveContracts();
+  console.log('[Sync] Sincronização concluída.');
+}
+
+// ══════════════════════════════════════════════════
+// EXPIRAÇÃO
+// ══════════════════════════════════════════════════
 
 function setupExpirationTimer(id, c, time) {
   const timer = setTimeout(async () => {
@@ -154,6 +208,10 @@ function setupExpirationTimer(id, c, time) {
   expirationTimers.set(id, timer);
 }
 
+// ══════════════════════════════════════════════════
+// RELEASE PLAYER
+// ══════════════════════════════════════════════════
+
 async function releasePlayer(member) {
   const teamRolesFound = CONFIG.ROLES.TEAM_ROLES.filter(id =>
     member.roles.cache.has(id)
@@ -165,6 +223,7 @@ async function releasePlayer(member) {
 
   await member.roles.add(CONFIG.ROLES.FA_ROLE).catch(() => {});
 
+  // Remover todos os contratos do jogador (reais e automáticos)
   for (const [id, c] of activeContracts) {
     if (c.signee.id === member.id) {
       clearTimeout(expirationTimers.get(id));
@@ -183,6 +242,10 @@ function getTeamRosterCount(teamRoleId, guildId) {
     c => c.teamRoleId === teamRoleId && c.guildId === guildId
   ).length;
 }
+
+// ══════════════════════════════════════════════════
+// COMMANDS
+// ══════════════════════════════════════════════════
 
 const commands = [
 
@@ -261,26 +324,11 @@ const commands = [
     .addStringOption(opt =>
       opt.setName('descricao').setDescription('Descricao sobre o friendly').setRequired(true)
     ),
-
-  // ══════════════════════════════════════════════════
-  // /ADDROSTER
-  // ══════════════════════════════════════════════════
-  new SlashCommandBuilder()
-    .setName('addroster')
-    .setDescription('[ADM] Registrar manualmente jogadores no roster apos reiniciar o bot')
-    .addRoleOption(opt =>
-      opt.setName('time')
-        .setDescription('Cargo do time')
-        .setRequired(true)
-    )
-    .addIntegerOption(opt =>
-      opt.setName('quantidade')
-        .setDescription('Quantos jogadores registrar no roster deste time (ex: 5, 7...)')
-        .setRequired(true)
-        .setMinValue(1)
-        .setMaxValue(50)
-    ),
 ];
+
+// ══════════════════════════════════════════════════
+// CLIENT READY
+// ══════════════════════════════════════════════════
 
 client.once(Events.ClientReady, async () => {
   console.log(`Bot logado como ${client.user.tag}`);
@@ -291,6 +339,7 @@ client.once(Events.ClientReady, async () => {
   });
 
   loadContracts();
+  await syncRostersFromRoles();
 
   try {
     await client.application.commands.set(commands.map(cmd => cmd.toJSON()));
@@ -299,6 +348,71 @@ client.once(Events.ClientReady, async () => {
     console.error(err);
   }
 });
+
+// ══════════════════════════════════════════════════
+// SINCRONIZAÇÃO EM TEMPO REAL — GuildMemberUpdate
+// ══════════════════════════════════════════════════
+
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+  const guild = newMember.guild;
+
+  for (const roleId of CONFIG.ROLES.TEAM_ROLES) {
+    const hadRole = oldMember.roles.cache.has(roleId);
+    const hasRole = newMember.roles.cache.has(roleId);
+
+    // Cargo de time adicionado manualmente → registrar no roster
+    if (!hadRole && hasRole) {
+      const alreadyExists = [...activeContracts.values()].some(
+        c => c.signee.id === newMember.id && c.guildId === guild.id
+      );
+
+      if (!alreadyExists) {
+        const role = guild.roles.cache.get(roleId);
+        const autoId = `AUTO_${guild.id}_${newMember.id}`;
+
+        activeContracts.set(autoId, {
+          signee: {
+            id: newMember.id,
+            username: newMember.user.username
+          },
+          contractor: {
+            id: 'system',
+            username: 'System'
+          },
+          teamName:   role ? role.name : roleId,
+          teamRoleId: roleId,
+          position:   'Unknown',
+          role:       'Player',
+          guildId:    guild.id,
+          signedAt:   new Date(),
+          expiresAt:  null,
+          automatic:  true
+        });
+
+        saveContracts();
+        console.log(`[RealTime] Adicionado ao roster: ${newMember.user.username} → ${role?.name ?? roleId}`);
+      }
+    }
+
+    // Cargo de time removido manualmente → remover do roster
+    if (hadRole && !hasRole) {
+      for (const [id, c] of activeContracts) {
+        if (c.signee.id === newMember.id && c.guildId === guild.id) {
+          clearTimeout(expirationTimers.get(id));
+          expirationTimers.delete(id);
+          activeContracts.delete(id);
+        }
+      }
+
+      saveContracts();
+      console.log(`[RealTime] Removido do roster: ${newMember.user.username}`);
+    }
+  }
+});
+
+// ══════════════════════════════════════════════════
+// INTERACTION CREATE
+// ══════════════════════════════════════════════════
 
 client.on(Events.InteractionCreate, async interaction => {
 
@@ -457,7 +571,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    const removedRoles = await releasePlayer(member);
+    await releasePlayer(member);
 
     const channel = guild.channels.cache.get(RELEASE_CHANNEL);
 
@@ -563,72 +677,6 @@ client.on(Events.InteractionCreate, async interaction => {
         (isFull
           ? 'Roster cheio - use /force_release para liberar uma vaga.'
           : `Vagas disponiveis: ${spotsLeft}`)
-      )
-      .setFooter({ text: `${guild.name} - ${new Date().toLocaleDateString('pt-BR')}` })
-      .setTimestamp();
-
-    return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-  }
-
-  // ══════════════════════════════════════════════════
-  // /ADDROSTER
-  // ══════════════════════════════════════════════════
-
-  if (interaction.isChatInputCommand() && interaction.commandName === 'addroster') {
-
-    const { member, options, guild } = interaction;
-
-    // Verificar permissao de ADM
-    const hasAdminRole = ADDROSTER_ADMIN_ROLES.some(id => member.roles.cache.has(id));
-    if (!hasAdminRole) {
-      return interaction.reply({
-        content: 'Apenas Administradores podem usar este comando.',
-        flags: MessageFlags.Ephemeral
-      });
-    }
-
-    const teamRole   = options.getRole('time');
-    const quantidade = options.getInteger('quantidade');
-
-    // Checar se ja tem algo registrado para evitar duplicata acidental
-    const jaRegistrado = getTeamRosterCount(teamRole.id, guild.id);
-
-    if (jaRegistrado > 0) {
-      return interaction.reply({
-        content: `O time **${teamRole.name}** ja possui **${jaRegistrado}** jogador(es) registrado(s) na memoria do bot.\nSe quiser reregistrar, use /force_release nos jogadores primeiro para limpar.`,
-        flags: MessageFlags.Ephemeral
-      });
-    }
-
-    // Criar entradas no activeContracts representando cada vaga ocupada
-    for (let i = 0; i < quantidade; i++) {
-      const fakeId = `MANUAL_${teamRole.id}_${Date.now()}_${i}`;
-      activeContracts.set(fakeId, {
-        signee:     { id: `manual_slot_${i}`, username: `Slot Manual ${i + 1}` },
-        contractor: { id: member.id, username: member.user.username },
-        teamName:   teamRole.name,
-        teamRoleId: teamRole.id,
-        position:   'Manual',
-        role:       'Manual',
-        guildId:    guild.id,
-        signedAt:   new Date(),
-        expiresAt:  new Date(Date.now() + CONFIG.CONTRACT_EXPIRATION),
-        manual:     true
-      });
-    }
-
-    saveContracts();
-
-    const total = getTeamRosterCount(teamRole.id, guild.id);
-
-    const embed = new EmbedBuilder()
-      .setColor(0x00bfff)
-      .setTitle('Roster Registrado Manualmente')
-      .setDescription(`O roster do time **${teamRole.name}** foi restaurado apos reinicializacao do bot.`)
-      .addFields(
-        { name: 'Jogadores adicionados', value: `${quantidade}`,               inline: true },
-        { name: 'Total atual no roster', value: `${total}/${MAX_ROSTER_SIZE}`, inline: true },
-        { name: 'Registrado por',        value: `<@${member.id}>`,             inline: false }
       )
       .setFooter({ text: `${guild.name} - ${new Date().toLocaleDateString('pt-BR')}` })
       .setTimestamp();
