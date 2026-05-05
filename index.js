@@ -50,6 +50,15 @@ const CONFIG = {
     SCRIM_PING: '1469704789385547906',
     SCRIM_HOSTER: ['1499835403925196931'],
     STAFF_ROLES: ['1469704789414772961', '1499921827546533930'],
+    CLOSE_ROLES: [
+      '1499832950068613381',
+      '1469704789486207001',
+      '1469704789486206998',
+      '1469704789486206999',
+      '1469704789486206997',
+      '1469704789486206996',
+      '1469704789414772970'
+    ],
     TEAM_ROLES: [
       '1469704789385547899',
       '1469704789385547898',
@@ -73,6 +82,12 @@ const CONFIG = {
   },
 
   CONTRACT_EXPIRATION: 24 * 60 * 60 * 1000,
+};
+
+// Estado de fechamento de janelas
+const windowStatus = {
+  contracts: false, // false = aberta, true = fechada
+  freeAgent: false,
 };
 
 const pendingContracts = new Map();
@@ -137,7 +152,6 @@ async function syncRostersFromRoles() {
         for (const member of membersWithRole.values()) {
           const autoId = `AUTO_${guild.id}_${member.id}`;
 
-          // Evitar duplicatas: pular se já existe contrato para este membro neste guild
           const alreadyExists = [...activeContracts.values()].some(
             c => c.signee.id === member.id && c.guildId === guild.id
           );
@@ -223,7 +237,6 @@ async function releasePlayer(member) {
 
   await member.roles.add(CONFIG.ROLES.FA_ROLE).catch(() => {});
 
-  // Remover todos os contratos do jogador (reais e automáticos)
   for (const [id, c] of activeContracts) {
     if (c.signee.id === member.id) {
       clearTimeout(expirationTimers.get(id));
@@ -324,6 +337,10 @@ const commands = [
     .addStringOption(opt =>
       opt.setName('descricao').setDescription('Descricao sobre o friendly').setRequired(true)
     ),
+
+  new SlashCommandBuilder()
+    .setName('close')
+    .setDescription('[DIRETORIA] Abrir/fechar janelas de contratos e Free Agent'),
 ];
 
 // ══════════════════════════════════════════════════
@@ -360,7 +377,6 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
     const hadRole = oldMember.roles.cache.has(roleId);
     const hasRole = newMember.roles.cache.has(roleId);
 
-    // Cargo de time adicionado manualmente → registrar no roster
     if (!hadRole && hasRole) {
       const alreadyExists = [...activeContracts.values()].some(
         c => c.signee.id === newMember.id && c.guildId === guild.id
@@ -394,7 +410,6 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
       }
     }
 
-    // Cargo de time removido manualmente → remover do roster
     if (hadRole && !hasRole) {
       for (const [id, c] of activeContracts) {
         if (c.signee.id === newMember.id && c.guildId === guild.id) {
@@ -426,6 +441,14 @@ client.on(Events.InteractionCreate, async interaction => {
 
     if (!CONFIG.ROLES.STAFF_ROLES.some(id => member.roles.cache.has(id))) {
       return interaction.reply({ content: 'Sem permissao.', flags: MessageFlags.Ephemeral });
+    }
+
+    // Verificar se a janela de contratos está fechada
+    if (windowStatus.contracts) {
+      return interaction.reply({
+        content: '🔒 A **janela de contratos** está fechada no momento. Aguarde a reabertura.',
+        flags: MessageFlags.Ephemeral
+      });
     }
 
     const targetUser = options.getUser('jogador');
@@ -518,6 +541,14 @@ client.on(Events.InteractionCreate, async interaction => {
   if (interaction.isChatInputCommand() && interaction.commandName === 'fa') {
 
     const { options, user, guild } = interaction;
+
+    // Verificar se a janela de Free Agent está fechada
+    if (windowStatus.freeAgent) {
+      return interaction.reply({
+        content: '🔒 A **janela de Free Agent** está fechada no momento. Aguarde a reabertura.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
 
     const embed = new EmbedBuilder()
       .setColor(0x000000)
@@ -785,11 +816,144 @@ client.on(Events.InteractionCreate, async interaction => {
   }
 
   // ══════════════════════════════════════════════════
-  // BOTOES (accept / reject contract)
+  // /CLOSE
+  // ══════════════════════════════════════════════════
+
+  if (interaction.isChatInputCommand() && interaction.commandName === 'close') {
+
+    const { member, guild } = interaction;
+
+    // Verificar permissão: apenas os cargos da diretoria
+    const hasPermission = CONFIG.ROLES.CLOSE_ROLES.some(id => member.roles.cache.has(id));
+    if (!hasPermission) {
+      return interaction.reply({
+        content: '🚫 Voce nao tem permissao para usar este comando.',
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    // Montar o embed com o status atual das janelas
+    const contractsStatus = windowStatus.contracts ? '🔒 Fechada' : '🟢 Aberta';
+    const faStatus        = windowStatus.freeAgent  ? '🔒 Fechada' : '🟢 Aberta';
+
+    const embed = new EmbedBuilder()
+      .setColor(0x0d0d0d)
+      .setTitle('⚙️ Gerenciamento de Janelas')
+      .setDescription('Selecione qual janela deseja **abrir** ou **fechar**.')
+      .addFields(
+        { name: '📋 Janela de Contratos', value: contractsStatus, inline: true },
+        { name: '🆓 Janela de Free Agent', value: faStatus,       inline: true }
+      )
+      .setFooter({ text: `${guild.name} - Solicitado por ${member.user.username}` })
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('toggle_contracts')
+        .setLabel(windowStatus.contracts ? '🟢 Abrir Contratos' : '🔒 Fechar Contratos')
+        .setStyle(windowStatus.contracts ? ButtonStyle.Success : ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId('toggle_fa')
+        .setLabel(windowStatus.freeAgent ? '🟢 Abrir Free Agent' : '🔒 Fechar Free Agent')
+        .setStyle(windowStatus.freeAgent ? ButtonStyle.Success : ButtonStyle.Danger)
+    );
+
+    return interaction.reply({
+      embeds: [embed],
+      components: [row],
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  // ══════════════════════════════════════════════════
+  // BOTOES (accept / reject contract + toggle windows)
   // ══════════════════════════════════════════════════
 
   if (interaction.isButton()) {
 
+    // ── Toggle Contratos ──────────────────────────
+    if (interaction.customId === 'toggle_contracts') {
+
+      const { member, guild } = interaction;
+
+      const hasPermission = CONFIG.ROLES.CLOSE_ROLES.some(id => member.roles.cache.has(id));
+      if (!hasPermission) {
+        return interaction.reply({ content: '🚫 Sem permissao.', flags: MessageFlags.Ephemeral });
+      }
+
+      windowStatus.contracts = !windowStatus.contracts;
+      const nowClosed = windowStatus.contracts;
+
+      const contractsStatus = windowStatus.contracts ? '🔒 Fechada' : '🟢 Aberta';
+      const faStatus        = windowStatus.freeAgent  ? '🔒 Fechada' : '🟢 Aberta';
+
+      const updatedEmbed = new EmbedBuilder()
+        .setColor(nowClosed ? 0xff4444 : 0x00cc66)
+        .setTitle('⚙️ Gerenciamento de Janelas')
+        .setDescription(`Janela de **Contratos** foi ${nowClosed ? '🔒 **fechada**' : '🟢 **aberta**'} por <@${member.id}>.`)
+        .addFields(
+          { name: '📋 Janela de Contratos', value: contractsStatus, inline: true },
+          { name: '🆓 Janela de Free Agent', value: faStatus,       inline: true }
+        )
+        .setFooter({ text: `${guild.name} - Atualizado por ${member.user.username}` })
+        .setTimestamp();
+
+      const updatedRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('toggle_contracts')
+          .setLabel(windowStatus.contracts ? '🟢 Abrir Contratos' : '🔒 Fechar Contratos')
+          .setStyle(windowStatus.contracts ? ButtonStyle.Success : ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId('toggle_fa')
+          .setLabel(windowStatus.freeAgent ? '🟢 Abrir Free Agent' : '🔒 Fechar Free Agent')
+          .setStyle(windowStatus.freeAgent ? ButtonStyle.Success : ButtonStyle.Danger)
+      );
+
+      return interaction.update({ embeds: [updatedEmbed], components: [updatedRow] });
+    }
+
+    // ── Toggle Free Agent ─────────────────────────
+    if (interaction.customId === 'toggle_fa') {
+
+      const { member, guild } = interaction;
+
+      const hasPermission = CONFIG.ROLES.CLOSE_ROLES.some(id => member.roles.cache.has(id));
+      if (!hasPermission) {
+        return interaction.reply({ content: '🚫 Sem permissao.', flags: MessageFlags.Ephemeral });
+      }
+
+      windowStatus.freeAgent = !windowStatus.freeAgent;
+      const nowClosed = windowStatus.freeAgent;
+
+      const contractsStatus = windowStatus.contracts ? '🔒 Fechada' : '🟢 Aberta';
+      const faStatus        = windowStatus.freeAgent  ? '🔒 Fechada' : '🟢 Aberta';
+
+      const updatedEmbed = new EmbedBuilder()
+        .setColor(nowClosed ? 0xff4444 : 0x00cc66)
+        .setTitle('⚙️ Gerenciamento de Janelas')
+        .setDescription(`Janela de **Free Agent** foi ${nowClosed ? '🔒 **fechada**' : '🟢 **aberta**'} por <@${member.id}>.`)
+        .addFields(
+          { name: '📋 Janela de Contratos', value: contractsStatus, inline: true },
+          { name: '🆓 Janela de Free Agent', value: faStatus,       inline: true }
+        )
+        .setFooter({ text: `${guild.name} - Atualizado por ${member.user.username}` })
+        .setTimestamp();
+
+      const updatedRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('toggle_contracts')
+          .setLabel(windowStatus.contracts ? '🟢 Abrir Contratos' : '🔒 Fechar Contratos')
+          .setStyle(windowStatus.contracts ? ButtonStyle.Success : ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId('toggle_fa')
+          .setLabel(windowStatus.freeAgent ? '🟢 Abrir Free Agent' : '🔒 Fechar Free Agent')
+          .setStyle(windowStatus.freeAgent ? ButtonStyle.Success : ButtonStyle.Danger)
+      );
+
+      return interaction.update({ embeds: [updatedEmbed], components: [updatedRow] });
+    }
+
+    // ── Accept / Reject Contract ──────────────────
     const action = interaction.customId.startsWith('accept') ? 'accept' : 'reject';
     const contractId = interaction.customId.replace(`${action}_`, '');
     const data = pendingContracts.get(contractId);
