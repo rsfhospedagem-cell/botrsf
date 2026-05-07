@@ -86,8 +86,8 @@ const CONFIG = {
 
 // Estado de fechamento de janelas
 const windowStatus = {
-  contracts: false, // false = aberta, true = fechada
-  freeAgent: false,
+  contracts: true, // false = aberta, true = fechada
+  freeAgent: true,
 };
 
 const pendingContracts = new Map();
@@ -110,20 +110,28 @@ function loadContracts() {
     const data = JSON.parse(fs.readFileSync(CONTRACTS_FILE, 'utf8'));
     const now = Date.now();
     for (const [id, c] of Object.entries(data)) {
-      const expiresAt = c.expiresAt
-        ? new Date(c.expiresAt).getTime()
-        : null;
+      const expiresAt = c.expiresAt ? new Date(c.expiresAt).getTime() : null;
 
-      if (!expiresAt || expiresAt > now) {
-        activeContracts.set(id, {
-          ...c,
-          signedAt: new Date(c.signedAt),
-          expiresAt: c.expiresAt ? new Date(c.expiresAt) : null
-        });
+      // Ignorar contratos já expirados
+      if (expiresAt && expiresAt <= now) {
+        console.log(`[Load] Contrato ${id} já expirou, ignorando.`);
+        continue;
+      }
 
-        if (expiresAt) {
-          const remaining = expiresAt - now;
+      activeContracts.set(id, {
+        ...c,
+        signedAt: new Date(c.signedAt),
+        expiresAt: c.expiresAt ? new Date(c.expiresAt) : null
+      });
+
+      if (expiresAt) {
+        const remaining = expiresAt - now;
+        // Guarda extra: nunca setar timer menor que 5 segundos acidentalmente
+        if (remaining > 5000) {
           setupExpirationTimer(id, c, remaining);
+        } else {
+          // Tempo praticamente zerado — tratar como expirado
+          activeContracts.delete(id);
         }
       }
     }
@@ -998,13 +1006,11 @@ client.on(Events.InteractionCreate, async interaction => {
         });
       }
 
-      const expiresAt  = new Date(Date.now() + CONFIG.CONTRACT_EXPIRATION);
-      const activeData = { ...data, signedAt: new Date(), expiresAt };
+      const activeData = { ...data, signedAt: new Date(), expiresAt: null };
 
       activeContracts.set(contractId, activeData);
       pendingContracts.delete(contractId);
-      saveContracts();
-      setupExpirationTimer(contractId, activeData, CONFIG.CONTRACT_EXPIRATION);
+        saveContracts();
 
       if (data.teamRoleId) await member.roles.add(data.teamRoleId);
       await member.roles.remove(CONFIG.ROLES.FA_ROLE).catch(() => {});
